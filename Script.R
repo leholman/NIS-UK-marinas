@@ -736,23 +736,49 @@ adonis(alldat~treatment+sites,method="bray",perm=999)
 
 
 
-
-
-
-
 #now we have some broad details letting us know there are some differenes between sediment and water, lets see which groups are driving this difference
 #First we need to annotate the taxonomy and create a dataset with only annotated OTUs
+
+#lets pull in the new taxonomy (BLAST best hit adjusted!) genrated using the below calls
+#system2("blastn",'-query query/Zhan.unoise3.OTUs.fa -db ReferenceDat/SILVA.fasta -outfmt "6 qseqid stitle pident length evalue bitscore" -num_threads 4 -max_target_seqs 20 -perc_identity 99 -culling_limit 10 -evalue 1e-25 -out resultsoneZ.txt')
+#system2("blastn",'-query query/Leray.unoise3.OTUs.fa -db ReferenceDat/MIDORI.fasta -outfmt "6 qseqid stitle pident length evalue bitscore" -num_threads 4 -max_target_seqs 20 -perc_identity 99 -culling_limit 10 -evalue 1e-25 -out resultsoneL.txt')
+
+##COI
+taxonomyL <- read.table("../taxonomy/20hits/resultsoneL.txt")
+#paste toghtehr everything after the last semicolon and the species name
+taxonomyL$species <- paste(gsub(".*;([A-z0-9 -]*)$","\\1",taxonomyL$V3),taxonomyL$V4)
+#now we generate a curated assignment 
+taxonomyLcurated <- data.frame("OTU"=unique(taxonomyL$V1),"assignment"=as.character(rep(NA,length(unique(taxonomyL$V1)))),stringsAsFactors=FALSE,sep="\t")
+#Here we loop over the data extracting the hit with the best bit score, if there are mutiple bets hit scores we use the common spp
+#we also extract metagenome and uncultured labels here
+for (loopOTU in unique(taxonomyL$V1)){
+  loopassignments <- taxonomyL[taxonomyL$V1==loopOTU & taxonomyL$V8==max(taxonomyL$V8[taxonomyL$V1==loopOTU]),]
+  if(length(grep("ncultured|metagenome|environmental|eukaryote|[Mm]arine",loopassignments$species))>0){loopassignments <- loopassignments[-grep("ncultured|metagenome|environmental|eukaryote|[Mm]arine",loopassignments$species),]}
+  if(length(unique(loopassignments$species))==1){taxonomyLcurated$assignment[taxonomyLcurated$OTU==loopOTU] <- unique(loopassignments$species)}
+}
+taxonomyLcurated <- taxonomyLcurated[!is.na(taxonomyLcurated$assignment),]
+
+##18S - same process as above
+taxonomyZ <- read.csv("../taxonomy/20hits/resultsoneZ.txt",sep="\t",header=FALSE)
+taxonomyZ$assignments <- gsub(".*;([A-z0-9 -]*)$","\\1",taxonomyZ$V2)
+taxonomyZcurated <- data.frame("OTU"=unique(taxonomyZ$V1),"assignment"=as.character(rep(NA,length(unique(taxonomyZ$V1)))),"tree"=as.character(rep(NA,length(unique(taxonomyZ$V1)))),stringsAsFactors=FALSE)
+for (loopOTU in unique(taxonomyZ$V1)){
+  loopassignments <- taxonomyZ[taxonomyZ$V1==loopOTU & taxonomyZ$V6==max(taxonomyZ$V6[taxonomyZ$V1==loopOTU]),]
+  if(length(grep("ncultured|metagenome|environmental|eukaryote|[Mm]arine",loopassignments$assignments))>0){loopassignments <- loopassignments[-grep("ncultured|metagenome|environmental|eukaryote|[Mm]arine",loopassignments$assignments),]}
+  if(length(grep("[0-9]",loopassignments$assignments))>0){loopassignments <- loopassignments[-grep("[0-9]",loopassignments$assignments),]}
+  if(length(unique(loopassignments$assignments))==1){taxonomyZcurated$assignment[taxonomyZcurated$OTU==loopOTU] <- unique(loopassignments$assignments)
+  taxonomyZcurated$tree[taxonomyZcurated$OTU==loopOTU] <- unique(gsub(".*(Eukaryota.*)","\\1",as.character(loopassignments$V2)))}
+}
+taxonomyZcurated <- taxonomyZcurated[!is.na(taxonomyZcurated$assignment),]
+
 
 
 ##COI
 
 #first subset the data by observations that have assigned taxonomy
-annotatedCOI <- rPreservCOI[rownames(rPreservCOI) %in% strictCOItaxonomy$V1,]
+annotatedCOI <- rPreservCOI[rownames(rPreservCOI) %in% taxonomyLcurated$OTU,]
 #now put in a column with the assignments
-strictCOItaxonomy$assignment <- paste(strictCOItaxonomy$V3,strictCOItaxonomy$V4)
-annotatedCOI$assignment <- strictCOItaxonomy$assignment[match(row.names(annotatedCOI),strictCOItaxonomy$V1)]
-#now lets clean up the column so it only contains taxonomy tree
-annotatedCOI$assignment <- gsub(".*root;(.*)","\\1",annotatedCOI$assignment)
+annotatedCOI$assignment <- taxonomyLcurated$assignment[match(row.names(annotatedCOI),taxonomyLcurated$OTU)]
 #now lets collapse the data into site-sediment comparisons, excluding HH
 treedatCOI <- data.frame("PQ.W"=rowSums(annotatedCOI[7:12]),"PQ.S"=rowSums(annotatedCOI[13:15]),"TB.W"=rowSums(annotatedCOI[22:27]),"TB.S"=rowSums(annotatedCOI[16:18]),"TQ.W"=rowSums(annotatedCOI[28:33]),"TQ.S"=rowSums(annotatedCOI[19:21]),"assignment"=annotatedCOI$assignment)
 
@@ -779,11 +805,9 @@ for (number in 1:length(treedatCOI$PQ.W)){
 
 
 #first subset the data by observations that have assigned taxonomy
-annotated18S <- rPreserv18S[rownames(rPreserv18S) %in% strict18Staxonomy$V1,]
+annotated18S <- rPreserv18S[rownames(rPreserv18S) %in% taxonomyZcurated$OTU,]
 #now put in a column with the assignments
-annotated18S$assignment <- strict18Staxonomy$V2[match(row.names(annotated18S),strict18Staxonomy$V1)]
-#now lets clean up the column so it only contains taxonomy tree
-annotated18S$assignment <- gsub(".*(Eukaryota.*)","\\1",annotated18S$assignment)
+annotated18S$assignment <- taxonomyZcurated$assignment[match(row.names(annotated18S),taxonomyZcurated$OTU)]
 #now lets collapse the data into site-sediment comparisons, excluding HH
 treedat18S <- data.frame("PQ.W"=rowSums(annotated18S[7:12]),"PQ.S"=rowSums(annotated18S[13:15]),"TB.W"=rowSums(annotated18S[22:27]),"TB.S"=rowSums(annotated18S[16:18]),"TQ.W"=rowSums(annotated18S[28:33]),"TQ.S"=rowSums(annotated18S[19:21]),"assignment"=annotated18S$assignment)
 
@@ -812,20 +836,13 @@ table(treedat18S$all.stat)
 
 WIRMSoutput <- data.frame("ID"=c(rownames(annotated18S),rownames(annotatedCOI)),"dataset"=c(rep("18S",length(rownames(annotated18S))),rep("COI",length(rownames(annotatedCOI)))),"annotation"=c(annotated18S$assignment,annotatedCOI$assignment))
 
-#This expression uses regex to take everything after the last semicolon. It is broken by non alpha numeric characters
-WIRMSoutput$species  <- gsub(".*;([A-z0-9 -]*)$","\\1",WIRMSoutput$annotation)
-
-#Some of the entries ae amnbiguous eg. Flabellual sp. so the extra characters breaks the regex. We can seperate these out now and 
-#make a clean dataset
-
-WIRMSoutput <- WIRMSoutput[nchar(WIRMSoutput$species)<50,]
 
 write.csv(WIRMSoutput,file="../taxonomy/WORMSdata.csv")
 
 ### I then used the WORMS online portal to identify the accepted taxonomy for each of the species. 
 #now lets read in the new taxonomy
 
-WORMSdat <- read_excel("../taxonomy/Matches/WORMS.xls")
+WORMSdat <- read_excel("../taxonomy/wormsdata_matched.xls")
 
 #get rid of entries with no match
 WORMSdat <- WORMSdat[!is.na(WORMSdat$AphiaID),]
@@ -878,7 +895,7 @@ SedWatertaxa <- table(data.frame(cbind(taxamediumstats$all.stat,taxamediumstats$
 
 SedWatertaxa <-cbind(SedWatertaxa[,c(1:length(unname(colSums(SedWatertaxa) >5)))[unname(colSums(SedWatertaxa) >8)]],rowSums(SedWatertaxa[,-c(1:length(unname(colSums(SedWatertaxa) >5)))[unname(colSums(SedWatertaxa) >8)]]))
 
-colnames(SedWatertaxa)[11] <- "Other"
+colnames(SedWatertaxa)[15] <- "Other"
 
 SedWatertaxaP <- prop.table(SedWatertaxa,margin=2)
 
@@ -889,7 +906,7 @@ row.names(SedWatertaxaP) <- c("Water","Both","Sediment")
 
 ##Is detction within each taxa staitically different?
 
-SedWatertaxaStat <-ceiling(rbind((SedWatertaxa[2,]+SedWatertaxa[1,]/2),(SedWatertaxa[3,]+SedWatertaxa[1,]/2)))
+SedWatertaxaStat <-floor(rbind((SedWatertaxa[2,]+SedWatertaxa[1,]/2),(SedWatertaxa[3,]+SedWatertaxa[1,]/2)))
 
 landing <- c(rep(NA,length(SedWatertaxaStat[1,])))
 for (taxa in 1:length(SedWatertaxaStat[1,])){
@@ -918,7 +935,8 @@ anova(glm(data$Freq~data$X1,family="poisson"))
 
 #####Invasive Species 
 
-invasiondata <- read_xls("../taxonomy/NonNatives/InvasiveSpp.xls")
+invasiondata <- read_xlsx("../taxonomy/NonNatives/InvasiveSppWRiMs.xlsx")
+invasiondata$`Non-nativeUK`[is.na(invasiondata$`Non-nativeUK`)] <- "ID"
 invasiondata18S <- invasiondata[invasiondata$dataset=="18S",]
 invasiondataCOI <- invasiondata[invasiondata$dataset=="COI",]
 
@@ -927,25 +945,26 @@ invasiondataCOI <- invasiondata[invasiondata$dataset=="COI",]
 ##First lets group the replicates per Site/treatment for 18S and COI 
 
 invadersCOI <- rSedWaterCOI[row.names(rSedWaterCOI) %in% WORMSdatCOI$ID[!is.na(WORMSdatCOI$AphiaID)],]
-invadersCOI$species <- WORMSdatCOI$species[!is.na(WORMSdatCOI$AphiaID)]
+invadersCOI$species <- WORMSdatCOI$ScientificName[match(rownames(invadersCOI),WORMSdatCOI$ID)]
 
 #There are a few duplicates so lets group them NB. we lose data on OTUs here 
 invadersCOI<- aggregate(.~species, data=invadersCOI, FUN=sum) 
 invadersCOI$status<- rep("N",length(invadersCOI[,1]))
 
 for (row in 1:length(invadersCOI[,1])){
-  invadersCOI$status[row] <- invasiondataCOI$`Non-nativeUK`[invasiondataCOI$species==invadersCOI$species[row]][1]
+  #invadersCOI$status[row] <- invasiondataCOI$`Non-nativeUK`[invasiondataCOI$species==invadersCOI$species[row]][1]
+   invadersCOI$status[row] <- invasiondataCOI$`Non-nativeUK`[invasiondataCOI$annotation == invadersCOI$species[row]][1] 
 }
 
 invaders18S <- rSedWater18S[row.names(rSedWater18S) %in% WORMSdat18S$ID[!is.na(WORMSdat18S$AphiaID)],]
-invaders18S$species <- WORMSdat18S$species[!is.na(WORMSdat18S$AphiaID)]
+invaders18S$species <- WORMSdat18S$ScientificName[match(rownames(invaders18S),WORMSdat18S$ID)]
 
 #There are a few duplicates so lets group them NB. we lose data on OTUs here 
 invaders18S<- aggregate(.~species, data=invaders18S, FUN=sum) 
 invaders18S$status<- rep("N",length(invaders18S[,1]))
 
 for (row in 1:length(invaders18S[,1])){
-  invaders18S$status[row] <- invasiondata18S$`Non-nativeUK`[invasiondata18S$species==invaders18S$species[row]][1]
+  invaders18S$status[row] <- invasiondata18S$`Non-nativeUK`[invasiondata18S$annotation == invaders18S$species[row]][1]
 }
 
 
@@ -975,6 +994,7 @@ invadersBOTH$Status[invadersBOTH$Status=="NA"] <- "IDonly"
 invadersBOTH[3:6][invadersBOTH[3:6] > 0] <- 1
 
 invadersBOTH <- invadersBOTH[rowSums(invadersBOTH[3:6])>0,]
+invadersBOTH$Status[invadersBOTH$Status=="ID"] <- "IDonly"
 
 noInvaders<- aggregate(.~Status, data=invadersBOTH[2:6], FUN=sum) 
 
@@ -985,15 +1005,15 @@ barplot(as.matrix(noInvaders[2:5]),col=c("#ffffbf","#fc8d59","#d73027"),ylab="Nu
 dev.off()
 
 #Mean number of UK invaders per site
-mean(colSums(invadersBOTH[invadersBOTH$Status=="yes",3:6]))
-sd(colSums(invadersBOTH[invadersBOTH$Status=="yes",3:6]))
+mean(colSums(invadersBOTH[invadersBOTH$Status=="UK",3:6]))
+sd(colSums(invadersBOTH[invadersBOTH$Status=="UK",3:6]))
 #Mean number of global invaders per site
-mean(colSums(invadersBOTH[invadersBOTH$Status=="no",3:6]))
-sd(colSums(invadersBOTH[invadersBOTH$Status=="no",3:6]))
+mean(colSums(invadersBOTH[invadersBOTH$Status=="Global",3:6]))
+sd(colSums(invadersBOTH[invadersBOTH$Status=="Global",3:6]))
 
 #Total number of invasev species
-length(invadersBOTH$ID[invadersBOTH$Status=="yes"])
-length(invadersBOTH$ID[invadersBOTH$Status=="no"])
+length(invadersBOTH$ID[invadersBOTH$Status=="UK"])
+length(invadersBOTH$ID[invadersBOTH$Status=="Global"])
 length(invadersBOTH$ID[invadersBOTH$Status=="IDonly"])
 
 #Now lets add marker and material data to this chart
