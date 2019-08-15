@@ -753,10 +753,17 @@ landing <- c(rep(NA,length(SedWatertaxaStat[1,])))
 for (taxa in 1:length(SedWatertaxaStat[1,])){
   landing[taxa] <- unname((binom.test(SedWatertaxaStat[,taxa],alternative ="two.sided",p=0.5)["p.value"]))
 }
-p.adjust(unlist(landing),method="bonferroni")
 
+names(landing) <- colnames(SedWatertaxaStat)
 p.adjust(unlist(landing),method="BH")
 
+##Platyhelminthes
+
+binom.test(SedWatertaxaStat[,colnames(SedWatertaxaStat)=="Platyhelminthes"],alternative ="two.sided",p=0.5)
+
+##Nematoda
+
+binom.test(SedWatertaxaStat[,colnames(SedWatertaxaStat)=="Nematoda"],alternative ="two.sided",p=0.5)
 
 
 
